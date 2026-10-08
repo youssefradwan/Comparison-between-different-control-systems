@@ -129,17 +129,41 @@ class Car(Node):
             self.c_drag: 0.005 (aerodynamic drag coefficient)
             self.c_roll: 0.05 (rolling resistance coefficient)
         """
-        # TODO: Milestone 2.2 — Extended Kinematic Bicycle Equations of Motion
-        # This simulates the physics of the car moving and turning in the real world.
-        # Implement the continuous-time state derivatives based on throttle and steering.
-        pass
+
+        x_pos, y_pos, theta, v = self.x
+        u_throttle, delta = self.u
+
+        # 1. Kinematic planar velocity components
+        x_dot = v * math.cos(theta)
+        y_dot = v * math.sin(theta)
+
+        # 2. Kinematic yaw rate
+        theta_dot = (v / self.wheelbase_length) * math.tan(delta)
+
+        # 3. Longitudinal acceleration dynamics with powertrain and resistance
+        a_drive = self.k_a * u_throttle
+
+        # Resistance forces act only to oppose existing forward velocity
+        if v > 0.0:
+            a_drag = self.c_drag * (v ** 2)
+            a_roll = self.c_roll * v
+            v_dot = a_drive - (a_drag + a_roll)
+        else:
+            # If vehicle is stopped, do not let resistance pull it backward
+            v_dot = max(0.0, a_drive)
+
+        self.x_dot = np.array([x_dot, y_dot, theta_dot, v_dot], dtype=np.float64)
 
     def update_x(self):
         """Integrates state forward using discrete Forward Euler numerical integration."""
-        # TODO: Milestone 2.3 — Forward Euler Integration & Physical Constraints
-        # This moves the simulation forward in time step-by-step.
-        # Advance the state numerically and apply realistic constraints like max speed.
-        pass
+        # 1. Euler integration step: x[k+1] = x[k] + x_dot * dt
+        self.x = self.x + self.x_dot * self.dt
+
+        # 2. Heading angle wrapping to [-pi, pi]
+        self.x[2] = math.atan2(math.sin(self.x[2]), math.cos(self.x[2]))
+
+        # 3. Longitudinal speed clamping: non-negative (no reverse) and capped at max_speed
+        self.x[3] = float(np.clip(self.x[3], 0.0, self.max_speed))
 
     def update_simulation(self):
         """Timer callback coordinating physics update and telemetry broadcast."""

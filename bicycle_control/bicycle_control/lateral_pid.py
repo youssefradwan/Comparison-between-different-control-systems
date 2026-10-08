@@ -37,12 +37,33 @@ class LateralPIDController:
         Returns:
             delta_rad: Commanded front steering angle in radians [-max_steer_rad, max_steer_rad].
         """
-        # TODO: Milestone 5.2 — Reactive Lateral PID Controller
-        # This is the lateral steering controller. It corrects for how far the car
-        # is off the path (CTE) and how misaligned its heading is.
-        # Implement PID on the CTE with anti-windup, add a heading correction term,
-        # and clamp the output to the steering limits.
-        pass
+        # 1. Proportional term for Cross-Track Error
+        p_term = self.kp * cte
+        
+        # 2. Integral accumulation with anti-windup clamping
+        self.integral_cte += cte * self.dt
+        self.integral_cte = float(np.clip(self.integral_cte, -self.integral_limit, self.integral_limit))
+        i_term = self.ki * self.integral_cte
+        
+        # 3. Derivative term for damping oscillations
+        if self.dt > 0.0:
+            d_term = self.kd * (cte - self.prev_cte) / self.dt
+        else:
+            d_term = 0.0
+            
+        # 4. Heading correction term
+        yaw_term = self.k_yaw * heading_err
+        
+        # 5. Combine terms (negated to ensure proper corrective steering direction)
+        raw_steer = -(p_term + i_term + d_term + yaw_term)
+        
+        # 6. Actuator clamping [-max_steer_rad, max_steer_rad]
+        delta_rad = float(np.clip(raw_steer, -self.max_steer_rad, self.max_steer_rad))
+        
+        # 7. Update memory for the next derivative calculation
+        self.prev_cte = cte
+        
+        return delta_rad
 
     def reset(self):
         """Resets integrator and previous error state."""
