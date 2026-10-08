@@ -158,3 +158,4 @@ Some telemetry topics are only available after the corresponding analyzer work i
 | **Lateral PID (Reactive)** | — | — | — | — | — | — |
 | **Pure Pursuit (Preview)** | — | — | — | — | — | — |
 | **Extended Kinematic MPC (Optimal)** | — | — | — | — | — | — |
+# Comparison-between-different-control-systems
