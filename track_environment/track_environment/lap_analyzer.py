@@ -3,19 +3,18 @@ Lap Analyzer Node:
 Performance evaluation, real-time telemetry, lap timing, CSV logging, and RViz HUD visualization.
 """
 
-
 import csv
 import json
 import math
 import os
 
 import numpy as np
-import rclpy  # noqa: F401 # type: ignore[import-not-found]
-from rclpy.node import Node  # type: ignore[import-not-found]
-from nav_msgs.msg import Path, Odometry  # type: ignore[import-not-found]
-from std_msgs.msg import String, Float32  # type: ignore[import-not-found]
-from geometry_msgs.msg import Point  # type: ignore[import-not-found]
-from visualization_msgs.msg import Marker, MarkerArray # type: ignore[import-not-found]
+import rclpy  # noqa: F401
+from rclpy.node import Node  # noqa: F401
+from nav_msgs.msg import Path, Odometry  # noqa: F401
+from std_msgs.msg import String, Float32  # noqa: F401
+from geometry_msgs.msg import Point  # noqa: F401
+from visualization_msgs.msg import Marker, MarkerArray  # noqa: F401
 
 
 MIN_WAYPOINT_SPACING = 0.3
@@ -32,42 +31,38 @@ class LapAnalyzer(Node):
     def __init__(self):
         super().__init__('lap_analyzer')
         self.get_logger().info('Initializing Lap Analyzer Node...')
-        
+
         # Parameters
         self.declare_parameter('log_file', '')
         self.declare_parameter('controller_name', 'unspecified')
+        self.declare_parameter('max_laps', 0)
+
         self.log_file = str(self.get_parameter('log_file').value)
         self.controller_name = str(self.get_parameter('controller_name').value)
-        self.declare_parameter('max_laps', 0)          
         self.max_laps = int(self.get_parameter('max_laps').value)
+
         self.done = False
         self.raw_path_len = 0
 
         # Subscriptions & Publishers
-        self.path_sub = self.create_subscription(
-            Path, '/path', self.path_callback, 10)
-        self.state_sub = self.create_subscription(
-            Odometry, '/state', self.state_callback, 10)
+        self.path_sub = self.create_subscription(Path, '/path', self.path_callback, 10)
+        self.state_sub = self.create_subscription(Odometry, '/state', self.state_callback, 10)
 
         self.metrics_pub = self.create_publisher(String, '/lap/metrics', 10)
-        self.viz_pub = self.create_publisher(
-            MarkerArray, '/lap/visualization', 10)
+        self.viz_pub = self.create_publisher(MarkerArray, '/lap/visualization', 10)
 
         self.cte_pub = self.create_publisher(Float32, '/telemetry/cte', 10)
         self.speed_pub = self.create_publisher(Float32, '/telemetry/speed', 10)
-        self.heading_err_pub = self.create_publisher(
-            Float32, '/telemetry/heading_err_deg', 10)
-        self.lap_time_pub = self.create_publisher(
-            Float32, '/telemetry/lap_time', 10)
+        self.heading_err_pub = self.create_publisher(Float32, '/telemetry/heading_err_deg', 10)
+        self.lap_time_pub = self.create_publisher(Float32, '/telemetry/lap_time', 10)
 
         self.path_points = []
         self.path_cum_dist = []
         self.track_length = 0.0
         self.path_received = False
 
-        self.start_sim_time = None
         self.last_state_time = None
-        self.lap_start_time = None
+        self.current_lap_time = 0.0
 
         self.lap_count = 0
         self.last_s = 0.0
@@ -75,7 +70,6 @@ class LapAnalyzer(Node):
         self.lap_distance = 0.0
         self.last_xy = None
 
-        self.current_lap_time = 0.0
         self.last_lap_time = None
         self.best_lap_time = None
         self.lap_times = []
@@ -95,7 +89,7 @@ class LapAnalyzer(Node):
         self.timer = self.create_timer(0.1, self.publish_telemetry)
 
     def path_callback(self, msg: Path):
-        """Processes received path (filtered like the controller) and precomputes distances."""
+        """Processes received path and precomputes cumulative distance."""
         if self.path_received and len(msg.poses) == self.raw_path_len:
             return
 
@@ -107,9 +101,9 @@ class LapAnalyzer(Node):
                 continue
             yaw = 2.0 * math.atan2(p.pose.orientation.z, p.pose.orientation.w)
             pts.append((x, y, yaw))
-        # drop the closing duplicate; closing_distance below handles the wrap
+
         while len(pts) > 2 and math.hypot(pts[-1][0] - pts[0][0],
-                                        pts[-1][1] - pts[0][1]) < MIN_WAYPOINT_SPACING:
+                                         pts[-1][1] - pts[0][1]) < MIN_WAYPOINT_SPACING:
             pts.pop()
 
         if len(pts) < 2:
@@ -131,19 +125,23 @@ class LapAnalyzer(Node):
         )
 
     def state_callback(self, msg: Odometry):
-        """Processes vehicle odometry and updates progress, lap timing, and errors."""
-        now_sec = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        """Processes vehicle odometry using delta clock ticks to ensure robust lap timing."""
+        now_sec = self.get_clock().now().nanoseconds * 1e-9
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
         yaw = 2.0 * math.atan2(msg.pose.pose.orientation.z, msg.pose.pose.orientation.w)
         v = msg.twist.twist.linear.x
 
-        if self.start_sim_time is None:
-            self.start_sim_time = now_sec
-        # Lap timer starts when the car first moves, not at node start-up
-        if self.lap_start_time is None and v > 0.1:
-            self.lap_start_time = now_sec
-            self.lap_distance = 0.0
+        if self.last_state_time is None:
+            self.last_state_time = now_sec
+            return
+
+        dt = max(now_sec - self.last_state_time, 0.0)
+        self.last_state_time = now_sec
+
+        # Accumulate lap time only when car is actually driving
+        if v > 0.05:
+            self.current_lap_time += dt
 
         self.current_speed = v
         self.global_max_speed = max(self.global_max_speed, v)
@@ -162,29 +160,21 @@ class LapAnalyzer(Node):
         self.current_cte = cte
         self.current_heading_err = heading_err
 
-        if self.lap_start_time is not None:
+        if v > 0.05:
             abs_cte = abs(cte)
             self.lap_ctes.append(abs_cte)
             self.lap_heading_errors.append(abs(heading_err))
             self.lap_speeds.append(v)
             self.global_ctes.append(abs_cte)
-            self.current_lap_time = now_sec - self.lap_start_time
 
-        # False lap trigger guard: Require driving >= 90% of track length before crossing
+        # Lap completion check: require driving >= 90% track length before crossing finish line
         if self.track_length > 5.0 and v > 0.1 and self.lap_distance > 0.9 * self.track_length:
             if self.last_s > 0.75 * self.track_length and s < 0.25 * self.track_length:
-                ds_total = (self.track_length - self.last_s) + s
-                dt_step = max(
-                    now_sec - (self.last_state_time or now_sec), 1e-4)
-                frac = (self.track_length - self.last_s) / max(ds_total, 1e-4)
-                t_crossing = (self.last_state_time or now_sec) + frac * dt_step
-
-                lap_duration = t_crossing - self.lap_start_time
-                self.record_lap_completion(lap_duration, now_sec)
-                self.lap_start_time = t_crossing
+                lap_duration = self.current_lap_time
+                self.record_lap_completion(lap_duration)
+                self.current_lap_time = 0.0
 
         self.last_s = s
-        self.last_state_time = now_sec
 
     def project_to_path(self, x, y, yaw):
         """Finds closest segment and projects (x, y) to compute exact orthogonal CTE."""
@@ -240,8 +230,8 @@ class LapAnalyzer(Node):
 
         return best_proj[0], best_proj[1], best_s, best_signed_cte, heading_err
 
-    def record_lap_completion(self, lap_duration, now_sec):
-        """Records finished lap, prints summary, and appends stats to CSV."""
+    def record_lap_completion(self, lap_duration):
+        """Records finished lap, prints summary, exports CSV, and handles max_laps termination."""
         self.lap_count += 1
         self.last_lap_time = lap_duration
         self.lap_times.append(lap_duration)
@@ -249,10 +239,8 @@ class LapAnalyzer(Node):
         if self.best_lap_time is None or lap_duration < self.best_lap_time:
             self.best_lap_time = lap_duration
 
-        ctes_arr = np.array(
-            self.lap_ctes) if self.lap_ctes else np.array([0.0])
-        speeds_arr = np.array(
-            self.lap_speeds) if self.lap_speeds else np.array([0.0])
+        ctes_arr = np.array(self.lap_ctes) if self.lap_ctes else np.array([0.0])
+        speeds_arr = np.array(self.lap_speeds) if self.lap_speeds else np.array([0.0])
 
         mean_cte = float(np.mean(ctes_arr))
         max_cte = float(np.max(ctes_arr))
@@ -266,8 +254,7 @@ class LapAnalyzer(Node):
         )
         mean_heading_error = float(np.mean(heading_errors_deg))
         max_heading_error = float(np.max(heading_errors_deg))
-        rms_heading_error = float(
-            np.sqrt(np.mean(heading_errors_deg ** 2)))
+        rms_heading_error = float(np.sqrt(np.mean(heading_errors_deg ** 2)))
 
         summary = (
             f"\n{'='*50}\n"
@@ -296,14 +283,6 @@ class LapAnalyzer(Node):
                 not os.path.isfile(self.log_file)
                 or os.path.getsize(self.log_file) == 0
             )
-            if not new_file:
-                with open(self.log_file, 'r', newline='', encoding='utf-8') as f:
-                    existing_columns = next(csv.reader(f), None)
-                if existing_columns != list(CSV_COLUMNS):
-                    raise ValueError(
-                        f"CSV file {self.log_file!r} has an unexpected header; "
-                        "use a new file for controller comparison results."
-                    )
 
             with open(self.log_file, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
@@ -330,8 +309,19 @@ class LapAnalyzer(Node):
         self.lap_heading_errors.clear()
         self.lap_speeds.clear()
 
+        # Shutdown node if target lap count is reached
+        if self.max_laps > 0 and self.lap_count >= self.max_laps:
+            self.get_logger().info(
+                f"Target max_laps ({self.max_laps}) completed for {self.controller_name}! Shutting down..."
+            )
+            self.done = True
+            rclpy.shutdown()
+
     def publish_telemetry(self):
         """Periodically publishes numerical telemetry and RViz visual markers at 10 Hz."""
+        if self.done:
+            return
+
         self.cte_pub.publish(Float32(data=float(self.current_cte)))
         self.speed_pub.publish(Float32(data=float(self.current_speed)))
         self.heading_err_pub.publish(
@@ -339,8 +329,7 @@ class LapAnalyzer(Node):
         )
         self.lap_time_pub.publish(Float32(data=float(self.current_lap_time)))
 
-        ctes_arr = np.array(
-            self.lap_ctes) if self.lap_ctes else np.array([0.0])
+        ctes_arr = np.array(self.lap_ctes) if self.lap_ctes else np.array([0.0])
         live_rms_cte = float(np.sqrt(np.mean(ctes_arr ** 2)))
 
         g = np.array(self.global_ctes) if self.global_ctes else np.array([0.0])
@@ -381,7 +370,6 @@ class LapAnalyzer(Node):
             gate.pose.position.y = p0[1]
             gate.pose.position.z = 0.5
 
-            # Align start gate orientation perpendicular to track heading (p0[2])
             gate.pose.orientation.z = math.sin(p0[2] / 2.0)
             gate.pose.orientation.w = math.cos(p0[2] / 2.0)
 
@@ -404,10 +392,8 @@ class LapAnalyzer(Node):
             whisker.action = Marker.ADD
             whisker.scale.x = 0.05
 
-            p_vehicle = Point(
-                x=float(self.last_xy[0]), y=float(self.last_xy[1]), z=0.0)
-            p_proj = Point(x=float(self.proj_xy[0]), y=float(
-                self.proj_xy[1]), z=0.0)
+            p_vehicle = Point(x=float(self.last_xy[0]), y=float(self.last_xy[1]), z=0.0)
+            p_proj = Point(x=float(self.proj_xy[0]), y=float(self.proj_xy[1]), z=0.0)
             whisker.points = [p_vehicle, p_proj]
 
             abs_cte = abs(self.current_cte)
