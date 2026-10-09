@@ -116,8 +116,9 @@ class LapAnalyzer(Node):
             cum.append(cum[-1] + math.hypot(pts[i][0] - pts[i - 1][0],
                                             pts[i][1] - pts[i - 1][1]))
         self.path_cum_dist = cum
-        closing_distance = math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1])
-        self.track_length = cum[-1] + closing_distance
+        
+        # Track length matches exact waypoints perimeter (no closing_distance padding)
+        self.track_length = cum[-1]
         self.path_received = True
         self.get_logger().info(
             f"Lap Analyzer: Loaded path with {len(pts)} waypoints "
@@ -125,7 +126,7 @@ class LapAnalyzer(Node):
         )
 
     def state_callback(self, msg: Odometry):
-        """Processes vehicle odometry using delta clock ticks to ensure robust lap timing."""
+        """Processes vehicle odometry using delta clock ticks for accurate lap timing."""
         now_sec = self.get_clock().now().nanoseconds * 1e-9
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
@@ -139,7 +140,7 @@ class LapAnalyzer(Node):
         dt = max(now_sec - self.last_state_time, 0.0)
         self.last_state_time = now_sec
 
-        # Accumulate lap time only when car is actually driving
+        # Accumulate lap time only when vehicle is moving
         if v > 0.05:
             self.current_lap_time += dt
 
@@ -167,9 +168,9 @@ class LapAnalyzer(Node):
             self.lap_speeds.append(v)
             self.global_ctes.append(abs_cte)
 
-        # Lap completion check: require driving >= 90% track length before crossing finish line
-        if self.track_length > 5.0 and v > 0.1 and self.lap_distance > 0.9 * self.track_length:
-            if self.last_s > 0.75 * self.track_length and s < 0.25 * self.track_length:
+        # Lap completion check (80% distance guard & 0.65/0.35 s-wrapping window)
+        if self.track_length > 5.0 and v > 0.1 and self.lap_distance > 0.80 * self.track_length:
+            if self.last_s > 0.65 * self.track_length and s < 0.35 * self.track_length:
                 lap_duration = self.current_lap_time
                 self.record_lap_completion(lap_duration)
                 self.current_lap_time = 0.0
@@ -274,10 +275,9 @@ class LapAnalyzer(Node):
         )
         self.get_logger().info(summary)
 
-        # Reset lap distance buffer
         self.lap_distance = 0.0
 
-        # Export metrics to CSV file if parameter is specified
+        # Export metrics to CSV
         if self.log_file:
             new_file = (
                 not os.path.isfile(self.log_file)
