@@ -27,12 +27,13 @@ class Track:
         self.trajectory_type = trajectory_type  # 'centerline', 'sp', 'iqp'
         self.close_loop = close_loop
 
-        self.file_path = self.resolve_track_path(self.track_file)
-        if not self.file_path or not os.path.isfile(self.file_path):
-            raise FileNotFoundError(f"Track file '{self.track_file}' could not be resolved.")
+        # Validate extension BEFORE resolving: a non-CSV must raise ValueError
+        # regardless of whether the file exists or resolves on disk.
+        if not str(self.track_file).lower().endswith('.csv'):
+            raise ValueError(
+                f"Track file '{self.track_file}' must be a CSV file.")
 
-        if not self.file_path.lower().endswith('.csv'):
-            raise ValueError(f"Track file '{self.track_file}' must be a CSV file.")
+        self.file_path = self.resolve_track_path(self.track_file)
 
         self.raw_data = {}
         self.waypoints = []
@@ -50,7 +51,8 @@ class Track:
             for pkg in ('track_environment', 'kinematic_bicycle'):
                 try:
                     share_dir = get_package_share_directory(pkg)
-                    candidates.append(os.path.join(share_dir, 'tracks', file_name))
+                    candidates.append(os.path.join(
+                        share_dir, 'tracks', file_name))
                     candidates.append(os.path.join(share_dir, file_name))
                 except PackageNotFoundError:
                     pass
@@ -65,8 +67,10 @@ class Track:
         cwd = os.getcwd()
         candidates.append(os.path.join(cwd, 'tracks', file_name))
         candidates.append(os.path.join(cwd, file_name))
-        candidates.append(os.path.join(cwd, 'src', 'track_environment', 'tracks', file_name))
-        candidates.append(os.path.join(cwd, 'src', 'kinematic_bicycle', 'tracks', file_name))
+        candidates.append(os.path.join(
+            cwd, 'src', 'track_environment', 'tracks', file_name))
+        candidates.append(os.path.join(
+            cwd, 'src', 'kinematic_bicycle', 'tracks', file_name))
         return candidates
 
     @classmethod
@@ -89,7 +93,8 @@ class Track:
                 x = float(row.get('x', 0.0))
                 y = float(row.get('y', 0.0))
                 psi = float(row.get('psi', 0.0) if row.get('psi') else 0.0)
-                kappa = float(row.get('kappa', 0.0) if row.get('kappa') else 0.0)
+                kappa = float(row.get('kappa', 0.0)
+                              if row.get('kappa') else 0.0)
                 s = float(row.get('s', 0.0) if row.get('s') else 0.0)
                 vx = float(row.get('vx', 0.0) if row.get('vx') else 0.0)
                 ax = float(row.get('ax', 0.0) if row.get('ax') else 0.0)
@@ -122,7 +127,8 @@ class Track:
         if self.close_loop and n > 0:
             first = self.waypoints[0].copy()
             last = self.waypoints[-1]
-            dist_close = math.hypot(first['x'] - last['x'], first['y'] - last['y'])
+            dist_close = math.hypot(
+                first['x'] - last['x'], first['y'] - last['y'])
             if dist_close > 1e-4:
                 first['s'] = last['s'] + dist_close
                 self.waypoints.append(first)
@@ -135,7 +141,8 @@ class Track:
                 reader = csv.reader(f)
                 marker_id = 0
                 for row in reader:
-                    if len(row) < 3: continue
+                    if len(row) < 3:
+                        continue
                     color_name = row[0]
                     try:
                         cx = float(row[1])
@@ -154,7 +161,7 @@ class Track:
                     marker = {
                         "header": {"frame_id": "map"},
                         "id": marker_id,
-                        "type": 2, # SPHERE
+                        "type": 2,  # SPHERE
                         "pose": {
                             "position": {"x": cx, "y": cy, "z": 0.0},
                             "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}

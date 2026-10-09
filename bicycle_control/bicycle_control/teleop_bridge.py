@@ -23,16 +23,23 @@ class TeleopBridge(Node):
         self.get_logger().info('Teleoperation Bridge Node Initialized')
 
         # Parameters
-        self.declare_parameter('max_linear_vel', 5.0)     # m/s corresponding to full 1.0 throttle
-        self.declare_parameter('max_angular_vel', 1.0)    # rad/s corresponding to full steering
-        self.declare_parameter('max_steer_rad', 0.610865)  # radians (~35 degrees)
-        self.declare_parameter('auto_zero_timeout', 0.5)  # seconds before zeroing commands
-        self.declare_parameter('use_cruise_control', False)  # Enable in Milestone 4.2
+        # m/s corresponding to full 1.0 throttle
+        self.declare_parameter('max_linear_vel', 5.0)
+        # rad/s corresponding to full steering
+        self.declare_parameter('max_angular_vel', 1.0)
+        # radians (~35 degrees)
+        self.declare_parameter('max_steer_rad', 0.610865)
+        # seconds before zeroing commands
+        self.declare_parameter('auto_zero_timeout', 0.5)
+        # Enable in Milestone 4.2
+        self.declare_parameter('use_cruise_control', False)
 
         self.max_linear_vel = float(self.get_parameter('max_linear_vel').value)
-        self.max_angular_vel = float(self.get_parameter('max_angular_vel').value)
+        self.max_angular_vel = float(
+            self.get_parameter('max_angular_vel').value)
         self.max_steer_rad = float(self.get_parameter('max_steer_rad').value)
-        self.auto_zero_timeout = float(self.get_parameter('auto_zero_timeout').value)
+        self.auto_zero_timeout = float(
+            self.get_parameter('auto_zero_timeout').value)
 
         # Handle both boolean and string representations passed from launch files
         cc_raw = self.get_parameter('use_cruise_control').value
@@ -41,14 +48,16 @@ class TeleopBridge(Node):
         else:
             self.use_cruise_control = bool(cc_raw)
 
-        self.get_logger().info(f'Cruise Control Status: {self.use_cruise_control}')
+        self.get_logger().info(
+            f'Cruise Control Status: {self.use_cruise_control}')
 
         # Publishers (10 Hz rate per assignment specification)
         self.throttle_pub = self.create_publisher(Float32, '/throttle', 10)
         self.steer_pub = self.create_publisher(Float32, '/steer', 10)
 
         # Subscribers
-        self.cmd_sub = self.create_subscription(Twist, '/cmd_vel', self.cmd_callback, 10)
+        self.cmd_sub = self.create_subscription(
+            Twist, '/cmd_vel', self.cmd_callback, 10)
 
         self.current_throttle = 0.0
         self.current_steer = 0.0
@@ -92,11 +101,13 @@ class TeleopBridge(Node):
             raw_steer = steer_fraction * self.max_steer_rad
         else:
             raw_steer = 0.0
-        self.current_steer = float(np.clip(raw_steer, -self.max_steer_rad, self.max_steer_rad))
+        self.current_steer = float(
+            np.clip(raw_steer, -self.max_steer_rad, self.max_steer_rad))
 
     def publish_commands(self):
         """Periodically publishes throttle and steering commands at 10 Hz."""
-        elapsed_sec = (self.get_clock().now() - self.last_cmd_time).nanoseconds * 1e-9
+        elapsed_sec = (self.get_clock().now() -
+                       self.last_cmd_time).nanoseconds * 1e-9
 
         # 1. Safety Watchdog Check (> 0.5s timeout)
         if elapsed_sec > self.auto_zero_timeout:

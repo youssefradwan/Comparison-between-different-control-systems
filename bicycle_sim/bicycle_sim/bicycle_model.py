@@ -43,14 +43,18 @@ class Car(Node):
         self.declare_parameter('wheelbase_length', float(wheelbase_length))
         self.declare_parameter('dt', float(dt))
         self.declare_parameter('car_name', 'ego_racecar')
-        self.declare_parameter('k_a', 4.0)                # m/s² powertrain acceleration gain
-        self.declare_parameter('c_drag', 0.005)           # aerodynamic drag coefficient (v^2)
-        self.declare_parameter('c_roll', 0.05)            # rolling resistance coefficient (v)
+        # m/s² powertrain acceleration gain
+        self.declare_parameter('k_a', 4.0)
+        # aerodynamic drag coefficient (v^2)
+        self.declare_parameter('c_drag', 0.005)
+        # rolling resistance coefficient (v)
+        self.declare_parameter('c_roll', 0.05)
         self.declare_parameter('max_steer_rad', float(math.radians(35.0)))
         self.declare_parameter('max_speed', 25.0)
         self.declare_parameter('wheel_radius', 0.5)
 
-        self.wheelbase_length = float(self.get_parameter('wheelbase_length').value)
+        self.wheelbase_length = float(
+            self.get_parameter('wheelbase_length').value)
         self.dt = float(self.get_parameter('dt').value)
         self.car_name = str(self.get_parameter('car_name').value)
         self.k_a = float(self.get_parameter('k_a').value)
@@ -62,9 +66,11 @@ class Car(Node):
 
         # State initialization [x, y, theta, v]
         default_x = [0.0, 0.0, 0.0, 0.0]
-        self.x = np.array(xInitial if xInitial is not None else default_x, dtype=np.float64)
+        self.x = np.array(
+            xInitial if xInitial is not None else default_x, dtype=np.float64)
 
-        self.u = np.array([0.0, 0.0], dtype=np.float64)  # [u_throttle, delta (rad)]
+        # [u_throttle, delta (rad)]
+        self.u = np.array([0.0, 0.0], dtype=np.float64)
         self.x_dot = np.zeros(4, dtype=np.float64)
         self.wheel_rotation = 0.0
 
@@ -94,7 +100,8 @@ class Car(Node):
                 f"exceeds limit [±{self.max_steer_rad:.3f} rad ({deg_lim:.1f}°)]. Clamping.",
                 throttle_duration_sec=1.0
             )
-            steer_input = float(np.clip(steer_input, -self.max_steer_rad, self.max_steer_rad))
+            steer_input = float(
+                np.clip(steer_input, -self.max_steer_rad, self.max_steer_rad))
 
         self.u[1] = steer_input
 
@@ -152,7 +159,8 @@ class Car(Node):
             # If vehicle is stopped, do not let resistance pull it backward
             v_dot = max(0.0, a_drive)
 
-        self.x_dot = np.array([x_dot, y_dot, theta_dot, v_dot], dtype=np.float64)
+        self.x_dot = np.array(
+            [x_dot, y_dot, theta_dot, v_dot], dtype=np.float64)
 
     def update_x(self):
         """Integrates state forward using discrete Forward Euler numerical integration."""

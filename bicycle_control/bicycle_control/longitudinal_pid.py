@@ -46,7 +46,8 @@ class PIDLongitudinalController:
 
         # 3. Integral accumulation with anti-windup clamping
         self.integral += error * self.dt
-        self.integral = float(np.clip(self.integral, -self.integral_limit, self.integral_limit))
+        self.integral = float(
+            np.clip(self.integral, -self.integral_limit, self.integral_limit))
         i_term = self.ki * self.integral
 
         # 4. Derivative term (prevent kick on first step)

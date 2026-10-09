@@ -19,7 +19,8 @@ def test_longitudinal_pid_negative_error():
 
 def test_longitudinal_pid_anti_windup():
     """Sustained error should not cause unbounded integral accumulation."""
-    controller = PIDLongitudinalController(kp=1.0, ki=1.0, kd=0.0, dt=0.1, integral_limit=2.0)
+    controller = PIDLongitudinalController(
+        kp=1.0, ki=1.0, kd=0.0, dt=0.1, integral_limit=2.0)
     for _ in range(100):
         controller.compute(target_vel=10.0, current_vel=0.0)
     assert controller.integral <= 2.0

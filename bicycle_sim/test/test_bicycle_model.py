@@ -57,7 +57,8 @@ def test_bicycle_euler_integration():
     """Verify Forward Euler state update, heading wrapping, and speed clamping."""
     rclpy.init()
     try:
-        car = Car(xInitial=[0.0, 0.0, 3.10, 0.5], dt=0.1, wheelbase_length=1.25)
+        car = Car(xInitial=[0.0, 0.0, 3.10, 0.5],
+                  dt=0.1, wheelbase_length=1.25)
         car.x_dot = np.array([1.0, 0.0, 0.5, -10.0], dtype=np.float64)
         car.update_x()
 

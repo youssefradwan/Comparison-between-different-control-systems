@@ -16,16 +16,18 @@ class VelocityProfiler:
 
     def compute_target_speed(self, kappa, fallback_speed=None):
         """Calculates curvature-limited velocity: v_max = sqrt(a_lat_max / |kappa|)."""
-        
-        # Determine our baseline target speed if no curvature constraint existed
+        # Baseline speed used ONLY when curvature data is unavailable
         base_speed = fallback_speed if fallback_speed is not None else self.default_speed
-        
-        # Protect against division by zero on straight road segments
-        if abs(kappa) < 1e-5:
+
+        # No usable curvature data -> conservative fallback (cruise speed)
+        if kappa is None or not math.isfinite(kappa):
             return float(min(base_speed, self.max_speed))
-            
-        # Calculate the physics-based cornering limit
+
+        # Straight road (near-zero curvature): no lateral constraint -> full speed
+        if abs(kappa) < 1e-5:
+            return float(self.max_speed)
+
+        # Corner: physics limit from the lateral acceleration budget,
+        # capped by the requested base speed and the global maximum
         safe_cornering_speed = math.sqrt(self.max_lat_accel / abs(kappa))
-        
-        # Output the most restrictive bound: the cornering limit, the requested base speed, or the global max
         return float(min(safe_cornering_speed, base_speed, self.max_speed))
