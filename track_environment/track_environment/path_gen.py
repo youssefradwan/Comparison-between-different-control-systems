@@ -39,19 +39,20 @@ class PathGenerator(Node):
                 f"total length: {self.track.total_length:.2f} m"
             )
         except Exception as e:
-            self.get_logger().error(f"Failed to load track '{track_file}': {e}")
+            self.get_logger().error(
+                f"Failed to load track '{track_file}': {e}")
             raise
 
         # Publishers
         self.path_pub = self.create_publisher(Path, '/path', 10)
-        self.bounds_pub = self.create_publisher(MarkerArray, '/track_bounds', 10)
+        self.bounds_pub = self.create_publisher(
+            MarkerArray, '/track_bounds', 10)
 
         # Pre-build path and boundary messages
         self.path_msg = self.build_path_msg()
         self.bounds_msg = self.build_bounds_msg()
 
-        # Timer to publish at 10 Hz
-        self.timer = self.create_timer(0.1, self.timer_callback)
+        self.timer = self.create_timer(1.0, self.timer_callback)
 
     def build_path_msg(self):
         """Converts track waypoints into nav_msgs/Path with valid yaw quaternions."""
